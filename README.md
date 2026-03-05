@@ -13,16 +13,16 @@ pip install opencv-python  # pour l'extraction video uniquement
 
 ## Fonctionnalites
 
-1. **Extraction video** : Détection d'un projectile par seuillage HSV et calcul du centroide avec OpenCV, calibration pixel-mètre avec inversion de l'axe y.
+1. **Extraction vidéo** : Détection d'un projectile par seuillage HSV et calcul du centroide avec OpenCV, calibration pixel-mètre avec inversion de l'axe y.
 
 
 2. **Simulation** : Génération de trajectoires théoriques (sans frottement, trainee lineaire ou quadratique) avec ajout de bruit gaussien pour simuler l'imprecision d'une camera.
 
 
-3. **Probleme inverse sans frottement** : Identification de la vitesse initiale v0 et de l'angle theta par minimisation des moindres carres sous contraintes physiques (L-BFGS-B).
+3. **Problème inverse sans frottement** : Identification de la vitesse initiale v0 et de l'angle theta par minimisation des moindres carres sous contraintes physiques (L-BFGS-B).
 
 
-4. **Probleme inverse avec trainee lineaire** : Résolution de l'EDO paramétrique par différenciation automatique (torchdiffeq) et comparaison de trois méthodes de gestion de la contrainte gamma >= 0 : pénalisation, projection et barrière logarithmique.
+4. **Problème inverse avec trainee lineaire** : Résolution de l'EDO paramétrique par différenciation automatique (torchdiffeq) et comparaison de trois méthodes de gestion de la contrainte gamma >= 0 : pénalisation, projection et barrière logarithmique.
 
 
 5. **Analyse de sensibilité** : Etude de la variance des paramètres estimés en fonction du niveau de bruit, avec regularisation de Tikhonov pour stabiliser l'optimisation.
