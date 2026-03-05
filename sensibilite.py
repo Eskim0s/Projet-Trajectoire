@@ -135,47 +135,67 @@ def generer_donnees(v0, theta, gamma, sigma, num_points=80):
 # ---------------------------------------------------------------------------
 # Analyse de sensibilite
 # ---------------------------------------------------------------------------
-def analyse_sensibilite(v0_vrai, theta_vrai, gamma_vrai,
-                        sigmas, n_essais=20, n_iter=1500, lr=0.01,
-                        alpha_tikhonov=5.0):
+import concurrent.futures
+
+def run_single_experiment(args):
     """
-    Pour chaque niveau de bruit sigma, lance n_essais estimations
-    et collecte les parametres estimes (avec et sans Tikhonov).
+    Fonction executee par chaque coeur du processeur (worker).
     """
+    sigma, v0_vrai, theta_vrai, gamma_vrai, n_iter, lr, alpha_tikhonov = args
+    
+    # 1. Generation des donnees
+    t_np, x_np, y_np = generer_donnees(v0_vrai, theta_vrai, gamma_vrai, sigma)
+    t_t = torch.tensor(t_np, dtype=torch.float64)
+    x_t = torch.tensor(x_np, dtype=torch.float64)
+    y_t = torch.tensor(y_np, dtype=torch.float64)
+
     p_ref = {
         'v0': torch.tensor(v0_vrai, dtype=torch.float64),
         'theta': torch.tensor(theta_vrai, dtype=torch.float64),
         'gamma': torch.tensor(gamma_vrai, dtype=torch.float64),
     }
 
+    # 2. Optimisation Brut
+    res_brut = optimiser(t_t, x_t, y_t, n_iter=n_iter, lr=lr, alpha=0.0)
+    
+    # 3. Optimisation Tikhonov
+    res_tikh = optimiser(t_t, x_t, y_t, n_iter=n_iter, lr=lr, 
+                         alpha=alpha_tikhonov, p_ref=p_ref)
+                         
+    return sigma, res_brut, res_tikh
+
+
+def analyse_sensibilite(v0_vrai, theta_vrai, gamma_vrai,
+                        sigmas, n_essais=20, n_iter=1500, lr=0.01,
+                        alpha_tikhonov=5.0):
+    """
+    Analyse de sensibilite parallelisee sur tous les coeurs du CPU.
+    """
     resultats = {'brut': {s: [] for s in sigmas},
                  'tikhonov': {s: [] for s in sigmas}}
 
-    total = len(sigmas) * n_essais * 2
-    compteur = 0
-
+    # Preparation de la liste des taches a distribuer
+    taches = []
     for sigma in sigmas:
-        for essai in range(n_essais):
-            t_np, x_np, y_np = generer_donnees(v0_vrai, theta_vrai,
-                                                gamma_vrai, sigma)
-            t_t = torch.tensor(t_np, dtype=torch.float64)
-            x_t = torch.tensor(x_np, dtype=torch.float64)
-            y_t = torch.tensor(y_np, dtype=torch.float64)
+        for _ in range(n_essais):
+            taches.append((sigma, v0_vrai, theta_vrai, gamma_vrai, 
+                           n_iter, lr, alpha_tikhonov))
 
-            res_brut = optimiser(t_t, x_t, y_t, n_iter=n_iter, lr=lr,
-                                 alpha=0.0)
-            compteur += 1
+    total = len(taches)
+    print(f"Lancement de {total} taches")
 
-            res_tikh = optimiser(t_t, x_t, y_t, n_iter=n_iter, lr=lr,
-                                 alpha=alpha_tikhonov, p_ref=p_ref)
-            compteur += 1
-
+    # Utilisation du Pool de processus
+    # max_workers=None utilise automatiquement tous les cœurs disponibles
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        # map() distribue les taches et recupere les resultats
+        for i, (sigma, res_brut, res_tikh) in enumerate(executor.map(run_single_experiment, taches), 1):
             resultats['brut'][sigma].append(res_brut)
             resultats['tikhonov'][sigma].append(res_tikh)
+            
+            # Affichage de la progression
+            print(f"\r  Progression : {i}/{total} taches terminees", end="", flush=True)
 
-            print(f"\r  Progression : {compteur}/{total}", end="", flush=True)
-
-    print()
+    print("\nTermine !")
     return resultats
 
 
