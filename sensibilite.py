@@ -7,6 +7,8 @@ du niveau de bruit, et compare l'optimisation avec et sans regularisation.
 import os
 import sys
 import subprocess
+import multiprocessing
+import concurrent.futures
 
 import numpy as np
 import torch
@@ -135,11 +137,10 @@ def generer_donnees(v0, theta, gamma, sigma, num_points=80):
 # ---------------------------------------------------------------------------
 # Analyse de sensibilite
 # ---------------------------------------------------------------------------
-import concurrent.futures
 
 def run_single_experiment(args):
     """
-    Fonction executee par chaque coeur du processeur (worker).
+    Fonction executee par chaque processus du pool.
     """
     sigma, v0_vrai, theta_vrai, gamma_vrai, n_iter, lr, alpha_tikhonov = args
     
@@ -170,6 +171,8 @@ def analyse_sensibilite(v0_vrai, theta_vrai, gamma_vrai,
                         alpha_tikhonov=5.0):
     """
     Analyse de sensibilite parallelisee sur tous les coeurs du CPU.
+    Utilise ProcessPoolExecutor avec le contexte 'spawn' pour un
+    vrai parallelisme multi-processus compatible Jupyter.
     """
     resultats = {'brut': {s: [] for s in sigmas},
                  'tikhonov': {s: [] for s in sigmas}}
@@ -182,13 +185,16 @@ def analyse_sensibilite(v0_vrai, theta_vrai, gamma_vrai,
                            n_iter, lr, alpha_tikhonov))
 
     total = len(taches)
-    print(f"Lancement de {total} taches")
+    n_workers = os.cpu_count() or 4
+    print(f"Lancement de {total} taches sur {n_workers} workers (processus)")
 
-    # Utilisation du Pool de processus
-    # max_workers=None utilise automatiquement tous les cœurs disponibles
-    with concurrent.futures.ProcessPoolExecutor() as executor:
-        # map() distribue les taches et recupere les resultats
-        for i, (sigma, res_brut, res_tikh) in enumerate(executor.map(run_single_experiment, taches), 1):
+    # 'spawn' cree des processus Python neufs (pas de fork dangereux)
+    ctx = multiprocessing.get_context("spawn")
+    with concurrent.futures.ProcessPoolExecutor(
+            max_workers=n_workers, mp_context=ctx) as executor:
+        futures = [executor.submit(run_single_experiment, t) for t in taches]
+        for i, future in enumerate(concurrent.futures.as_completed(futures), 1):
+            sigma, res_brut, res_tikh = future.result()
             resultats['brut'][sigma].append(res_brut)
             resultats['tikhonov'][sigma].append(res_tikh)
             
