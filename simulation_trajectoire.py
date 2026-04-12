@@ -11,9 +11,12 @@ import matplotlib.pyplot as plt
 G = 9.81
 
 
+# ---------------------------------------------------------------------------
+# Génère une trajectoire
+# ---------------------------------------------------------------------------
 def generate_trajectory(v0, theta, t_max, num_points):
     """
-    Calcule la trajectoire theorique d'un projectile sans frottement.
+    Calcule la trajectoire théorique d'un projectile sans frottement.
 
     Parameters
     ----------
@@ -22,7 +25,7 @@ def generate_trajectory(v0, theta, t_max, num_points):
     theta : float
         Angle de tir en radians.
     t_max : float
-        Duree maximale de la simulation en secondes.
+        Durée maximale de la simulation en secondes.
     num_points : int
         Nombre de points temporels.
 
@@ -31,19 +34,21 @@ def generate_trajectory(v0, theta, t_max, num_points):
     t : np.ndarray
         Vecteur temps de taille num_points.
     x : np.ndarray
-        Positions horizontales theoriques (m).
+        Positions horizontales théoriques (m).
     y : np.ndarray
-        Positions verticales theoriques (m).
+        Positions verticales théoriques (m).
     """
     t = np.linspace(0, t_max, num_points)
     x = v0 * np.cos(theta) * t
     y = v0 * np.sin(theta) * t - 0.5 * G * t**2
     return t, x, y
 
-
+# ---------------------------------------------------------------------------
+# Génère une trajectoire avec trainée linéaire
+# ---------------------------------------------------------------------------
 def generate_trajectory_drag(v0, theta, gamma, t_max, num_points):
     """
-    Calcule la trajectoire avec trainee lineaire (gamma = k/m).
+    Calcule la trajectoire avec trainée linéaire (gamma = k/m).
     EDO : dvx/dt = -gamma*vx, dvy/dt = -g - gamma*vy
     Integration par RK45.
 
@@ -54,7 +59,7 @@ def generate_trajectory_drag(v0, theta, gamma, t_max, num_points):
     theta : float
         Angle de tir (rad).
     gamma : float
-        Coefficient de trainee k/m (s^-1).
+        Coéfficient de trainée k/m (s^-1).
     t_max : float
         Duree maximale (s).
     num_points : int
@@ -78,38 +83,48 @@ def generate_trajectory_drag(v0, theta, gamma, t_max, num_points):
 
     return sol.t, sol.y[0], sol.y[1]
 
-
+# ---------------------------------------------------------------------------
+# Ajout du bruit
+# ---------------------------------------------------------------------------
 def ajouter_bruit(x, y, sigma=0.05):
     """
-    Ajoute un bruit blanc gaussien aux coordonnees pour simuler
+    Ajoute un bruit blanc gaussien aux coordonnées pour simuler
     l'imprecision d'une camera de smartphone.
 
     Parameters
     ----------
     x, y : np.ndarray
-        Coordonnees theoriques.
+        Coordonnées theoriques.
     sigma : float
-        Ecart-type du bruit en metres.
+        Ecart-type du bruit en mètres.
 
     Returns
     -------
     x_obs, y_obs : np.ndarray
-        Coordonnees bruitees.
+        Coordonnées bruitées.
     """
     bruit_x = np.random.normal(0, sigma, size=x.shape)
     bruit_y = np.random.normal(0, sigma, size=y.shape)
     return x + bruit_x, y + bruit_y
 
+# ---------------------------------------------------------------------------
+# Graphe de la trajectoire
+# ---------------------------------------------------------------------------
+plt.rcParams['font.sans-serif'] = ['Arial', 'Liberation Sans', 'DejaVu Sans', 'sans-serif']
+plt.rcParams['font.family'] = 'sans-serif'
+plt.rcParams['font.size'] = 8
 
 def tracer_trajectoire(t, x_th, y_th, x_obs, y_obs, v0, theta_deg):
     """
-    Trace la trajectoire theorique et les observations bruitees
-    sur un meme graphique.
+    Trace la trajectoire théorique et les observations bruitées
+    sur un même graphique.
     """
     fig, ax = plt.subplots(figsize=(10, 5))
 
-    ax.plot(x_th, y_th, 'b-', linewidth=2, label='Trajectoire theorique')
-    ax.scatter(x_obs, y_obs, c='r', s=20, alpha=0.7, zorder=5,
+    ax.set_facecolor('#F8F9FA')
+
+    ax.plot(x_th, y_th, '-', color='#1D4E89', linewidth=1, label='Trajectoire théorique')
+    ax.scatter(x_obs, y_obs, c='#E07A5F', s=10, alpha=0.7, zorder=5,
                label='Observations bruitees')
 
     ax.set_xlabel('x (m)')
@@ -122,7 +137,7 @@ def tracer_trajectoire(t, x_th, y_th, x_obs, y_obs, v0, theta_deg):
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig('trajectoire_simulee.png', dpi=150)
+    plt.savefig('trajectoire_simulee.png', dpi=1200)
     plt.show()
 
 

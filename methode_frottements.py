@@ -22,7 +22,7 @@ DEVICE = torch.device('cpu')
 
 
 # ---------------------------------------------------------------------------
-# EDO du projectile avec trainee lineaire
+# EDO du projectile avec trainée linéaire
 # ---------------------------------------------------------------------------
 class DynamiqueProjectile(torch.nn.Module):
     """
@@ -50,7 +50,7 @@ class DynamiqueProjectile(torch.nn.Module):
 # ---------------------------------------------------------------------------
 def integrer_trajectoire(params, t_tensor):
     """
-    Integre l'EDO pour les parametres donnes.
+    Intègre l'EDO pour les paramètres donnés.
 
     Parameters
     ----------
@@ -86,16 +86,15 @@ def cout_moindres_carres(params, t_tensor, x_obs, y_obs):
 # ---------------------------------------------------------------------------
 # Trois methodes de gestion de la contrainte gamma >= 0
 # ---------------------------------------------------------------------------
-
+# -- Penalisation -------------------------------------------------------
 def optimiser_penalisation(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01,
-                           mu=100.0):
+                           mu=100.0, gamma_init=0.2):
     """
     Methode de penalisation : J_pen = J + mu * max(0, -gamma)^2
     """
-    params = _creer_params()
+    params = _creer_params(gamma_init=gamma_init)
     optimizer = torch.optim.Adam(params.values(), lr=lr)
     historique = []
-
     for i in range(n_iter):
         optimizer.zero_grad()
         J = cout_moindres_carres(params, t_tensor, x_obs, y_obs)
@@ -104,18 +103,18 @@ def optimiser_penalisation(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01,
         loss.backward()
         optimizer.step()
         historique.append(J.item())
-
     return _extraire_resultats(params, historique, "Penalisation")
 
 
-def optimiser_projection(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01):
+# -- Projection ---------------------------------------------------------
+def optimiser_projection(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01,
+                         gamma_init=0.2):
     """
     Methode de projection : apres chaque pas de gradient, gamma = max(0, gamma)
     """
-    params = _creer_params()
+    params = _creer_params(gamma_init=gamma_init)
     optimizer = torch.optim.Adam(params.values(), lr=lr)
     historique = []
-
     for i in range(n_iter):
         optimizer.zero_grad()
         J = cout_moindres_carres(params, t_tensor, x_obs, y_obs)
@@ -124,38 +123,31 @@ def optimiser_projection(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01):
         with torch.no_grad():
             params['gamma'].clamp_(min=0.0)
         historique.append(J.item())
-
     return _extraire_resultats(params, historique, "Projection")
 
-
+    
+# -- Barriere -----------------------------------------------------------
 def optimiser_barriere(t_tensor, x_obs, y_obs, n_iter=2000, lr=0.01,
-                       mu_init=1.0, mu_decay=0.995):
+                       mu_init=1.0, mu_decay=0.995, gamma_init=0.5):
     """
     Methode de barriere logarithmique : J_bar = J - mu * ln(gamma)
     mu decroit progressivement pour resserrer la contrainte.
     """
-    params = _creer_params(gamma_init=0.5)
+    params = _creer_params(gamma_init=gamma_init)
     optimizer = torch.optim.Adam(params.values(), lr=lr)
     historique = []
     mu = mu_init
-
     for i in range(n_iter):
         optimizer.zero_grad()
         J = cout_moindres_carres(params, t_tensor, x_obs, y_obs)
-
-        gamma_val = params['gamma']
         barriere = -mu * torch.log(torch.clamp(params['gamma'], min=1e-8))
-
         loss = J + barriere
         loss.backward()
         optimizer.step()
-
         with torch.no_grad():
             params['gamma'].clamp_(min=1e-8)
-
         mu *= mu_decay
         historique.append(J.item())
-
     return _extraire_resultats(params, historique, "Barriere")
 
 
@@ -260,7 +252,7 @@ if __name__ == '__main__':
 
     CSV_PATH = "observations.csv"
     SCRIPT_SIMULATION = "simulation_trajectoire.py"
-
+    
     if not os.path.exists(CSV_PATH):
         print(f"{CSV_PATH} introuvable, lancement de {SCRIPT_SIMULATION}...")
         script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -268,43 +260,62 @@ if __name__ == '__main__':
         if not os.path.exists(chemin_script):
             sys.exit(f"Erreur : {SCRIPT_SIMULATION} introuvable dans {script_dir}")
         subprocess.run([sys.executable, chemin_script], check=True)
-
+    
     print("Chargement des observations")
     t_np, x_obs_np, y_obs_np = charger_csv(CSV_PATH)
-
+    
     t_tensor = torch.tensor(t_np, dtype=torch.float64)
     x_obs = torch.tensor(x_obs_np, dtype=torch.float64)
     y_obs = torch.tensor(y_obs_np, dtype=torch.float64)
-
+    
+    scenarios = [
+        {"nom": "A", "gamma_init":  0.2,  "lr": 0.01,
+         "desc": "Contrainte inactive"},
+        {"nom": "B", "gamma_init": -0.5,  "lr": 0.01,
+         "desc": "gamma_init negatif — contrainte active des le depart"},
+        {"nom": "C", "gamma_init":  0.01, "lr": 0.05,
+         "desc": "gamma_init proche de 0 + lr eleve — oscillations"},
+        {"nom": "D", "gamma_init": -1.0,  "lr": 0.05,
+         "desc": "Cas extreme — differences maximales"},
+    ]
+    
     N_ITER = 2000
-    LR = 0.01
-
-    # -- Methode 1 : Penalisation -------------------------------------------
-    print("\n[1/3] Optimisation par penalisation...")
-    res_pen = optimiser_penalisation(t_tensor, x_obs, y_obs,
-                                     n_iter=N_ITER, lr=LR)
-
-    # -- Methode 2 : Projection ---------------------------------------------
-    print("[2/3] Optimisation par projection...")
-    res_proj = optimiser_projection(t_tensor, x_obs, y_obs,
-                                    n_iter=N_ITER, lr=LR)
-
-    # -- Methode 3 : Barriere -----------------------------------------------
-    print("[3/3] Optimisation par barriere logarithmique...")
-    res_bar = optimiser_barriere(t_tensor, x_obs, y_obs,
-                                 n_iter=N_ITER, lr=LR)
-
-    resultats = [res_pen, res_proj, res_bar]
-
-    # -- Affichage des resultats --------------------------------------------
-    print("\n" + "=" * 65)
-    print(f"{'Methode':<16} {'v0':>8} {'theta':>8} {'gamma':>8} {'Cout':>12}")
-    print("-" * 65)
-    for r in resultats:
-        print(f"{r['nom']:<16} {r['v0']:>8.3f} {r['theta_deg']:>8.3f} "
-              f"{r['gamma']:>8.5f} {r['cout_final']:>12.4e}")
-    print("=" * 65)
-
-    # -- Graphiques ---------------------------------------------------------
-    tracer_convergence(resultats)
-    tracer_trajectoires(t_np, x_obs_np, y_obs_np, resultats)
+    
+    for sc in scenarios:
+        gi = sc["gamma_init"]
+        lr = sc["lr"]
+        print("\n" + "=" * 65)
+        print(f"SCENARIO {sc['nom']}  |  gamma_init = {gi}   lr = {lr}")
+        print(f"  {sc['desc']}")
+        print("=" * 65)
+    
+        # -- Méthode 1 : Pénalisation -------------------------------------------
+        print(f"\n[1/3] Optimisation par penalisation...")
+        res_pen = optimiser_penalisation(t_tensor, x_obs, y_obs,
+                                         n_iter=N_ITER, lr=lr, gamma_init=gi)
+    
+        # -- Méthode 2 : Projection ---------------------------------------------
+        print(f"[2/3] Optimisation par projection...")
+        res_proj = optimiser_projection(t_tensor, x_obs, y_obs,
+                                         n_iter=N_ITER, lr=lr, gamma_init=gi)
+    
+        # -- Methode 3 : Barrière -----------------------------------------------
+        # gamma_init doit etre > 0 pour ln(gamma) ; on utilise max(gi, 0.01)
+        gi_bar = max(gi, 0.01)
+        print(f"[3/3] Optimisation par barriere logarithmique...")
+        res_bar = optimiser_barriere(t_tensor, x_obs, y_obs,
+                                      n_iter=N_ITER, lr=lr, gamma_init=gi_bar)
+        resultats = [res_pen, res_proj, res_bar]
+    
+        # -- Affichage des résultats --------------------------------------------
+        print("\n" + "=" * 65)
+        print(f"{'Methode':<16} {'v0':>8} {'theta':>8} {'gamma':>8} {'Cout':>12}")
+        print("-" * 65)
+        for r in resultats:
+            print(f"{r['nom']:<16} {r['v0']:>8.3f} {r['theta_deg']:>8.3f} "
+                  f"{r['gamma']:>8.5f} {r['cout_final']:>12.4e}")
+        print("=" * 65)
+    
+        # -- Graphiques ---------------------------------------------------------
+        tracer_convergence(resultats)
+        tracer_trajectoires(t_np, x_obs_np, y_obs_np, resultats)
